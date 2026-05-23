@@ -8,21 +8,23 @@
 struct TradeInfo {
   OrderId orderId{};
   Price price{};
-  Quantity quantity{};
 };
 
 class Trade {
  private:
   TradeInfo m_bidTrade{};
   TradeInfo m_askTrade{};
+  Quantity m_quantity{};
 
  public:
-  Trade(const TradeInfo& bidTrade, const TradeInfo& askTrade)
+  Trade(const TradeInfo& bidTrade, const TradeInfo& askTrade, Quantity quantity)
       : m_bidTrade{bidTrade},
-        m_askTrade{askTrade} {}
+        m_askTrade{askTrade},
+        m_quantity{quantity} {}
 
   const TradeInfo& getBidTrade() { return m_bidTrade; }
   const TradeInfo& getAskTrade() { return m_askTrade; }
+  const Quantity& getQuantity() const { return m_quantity; }
 };
 
 using Trades = std::vector<Trade>;
