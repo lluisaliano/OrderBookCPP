@@ -17,9 +17,11 @@ class Price {
     }
   }
 
-  Price getPrice() const { return Price(m_value); }
-
   Price operator-(const Price& other) const {
+    return Price(m_value - other.m_value);
+  }
+
+  Price operator+(const Price& other) const {
     return Price(m_value - other.m_value);
   }
 

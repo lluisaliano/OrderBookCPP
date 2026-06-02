@@ -6,10 +6,21 @@
 #include <numeric>
 #include <unordered_map>
 
-#include "level.hpp"
+#include "level_info.hpp"
 #include "order.hpp"
 #include "price.hpp"
 #include "trade.hpp"
+
+class OrderBookLevel {
+ private:
+  OrderPointers m_level{};
+  Quantity m_quantity{};  // Quantity on the level
+ public:
+  Quantity getQuantity() const { return m_quantity; }
+  OrderPointers& getLevel() { return m_level; }
+  void reduceQuantity(Quantity value) { m_quantity -= value; }
+  void addQuantity(Quantity value) { m_quantity += value; }
+};
 
 class OrderBook {
  private:
@@ -18,22 +29,52 @@ class OrderBook {
     OrderPointers::iterator m_location{};
   };
 
-  std::map<Price, OrderPointers, std::greater<Price>> m_bids;
-  std::map<Price, OrderPointers, std::less<Price>> m_asks;
+  std::map<Price, OrderBookLevel, std::greater<Price>> m_bids;
+  std::map<Price, OrderBookLevel, std::less<Price>> m_asks;
   std::unordered_map<OrderId, OrderEntry> m_orders;
 
-  // This should account for complete sizes
-  bool CanMatch(Side side, Price price) const {
+  // TODO This should review if order size is enough!!
+  bool CanMatch(const Order& order) const {
+    const auto& side{order.getSide()};
+    const auto& orderPrice{order.getPrice()};
+    auto missingQuantity{order.getRemainingQuantity()};
+
     if (side == Side::Buy) {
       if (m_asks.empty()) return false;
 
-      const auto& bestAsk = m_asks.begin()->first;  // Get best ask price
-      return price >= bestAsk;
+      for (auto& askLevel : m_asks) {
+        // If our buy order is higher than an ask, we can match, reducing order
+        // quantity
+        if (askLevel.first < orderPrice) {
+          missingQuantity -=
+              askLevel.second.getQuantity();  // Get level quantity
+          // If missing quantity goes below 0, we can match
+          if (missingQuantity <= 0) return true;
+
+          continue;  // Otherwise check for next level price
+        }
+        // If our orderPrice is smaller than our ask and we have not returned,
+        // we break the loop
+        break;
+      }
+      // If we have not returned true, we return false as we can not match
+      return false;
+
     } else {
       if (m_bids.empty()) return false;
 
-      const auto& bestBid = m_bids.begin()->first;  // Get best bid price
-      return price <= bestBid;
+      for (auto& bidLevel : m_bids) {
+        // If our bid level is higher than our sell order price, we can match
+        if (bidLevel.first > orderPrice) {
+          missingQuantity -= bidLevel.second.getQuantity();
+
+          if (missingQuantity <= 0) return true;
+
+          continue;
+        }
+        break;
+      }
+      return false;
     }
   }
 
@@ -44,18 +85,21 @@ class OrderBook {
     while (true) {
       if (m_bids.empty() || m_asks.empty()) break;
 
-      auto& [bidPrice, bidsLevel] = *m_bids.begin();
-      auto& [askPrice, asksLevel] = *m_asks.begin();
+      auto& [bidPrice, bids] = *m_bids.begin();
+      auto& [askPrice, asks] = *m_asks.begin();
+
+      auto& bidsLevel{bids.getLevel()};
+      auto& asksLevel{asks.getLevel()};
 
       if (bidPrice < askPrice) break;  // There is nothing to match in this case
 
       while (bidsLevel.size() && asksLevel.size()) {
-        auto& bid = bidsLevel.front();  // These take the earliest bid and ask
-                                        // that entered at that price
-        auto& ask = asksLevel.front();
+        auto bid = bidsLevel.front();  // These take the earliest bid and ask
+                                       // that entered at that price
+        auto ask = asksLevel.front();
 
-        // The filled quantity of an order is the minimum between the remaining
-        // quantity of each order
+        // The filled quantity of an order is the minimum between the
+        // remaining quantity of each order
         Quantity quantity =
             std::min(bid->getRemainingQuantity(), ask->getRemainingQuantity());
 
@@ -87,8 +131,8 @@ class OrderBook {
       }
     }
 
-    // ?? In case there were FOK Orders that could have been completely matched
-    // but were not, we have to cancel them
+    // ?? In case there were FOK Orders that could have been completely
+    // matched but were not, we have to cancel them
     if (!m_bids.empty()) {
       auto& bidsLevel = m_bids.begin()->second;
       auto& order = bidsLevel.front();
@@ -114,8 +158,7 @@ class OrderBook {
       return {};
     }
 
-    if (order->getOrderType() == OrderType::FillOrKill &&
-        CanMatch(order->getSide(), order->getPrice())) {
+    if (order->getOrderType() == OrderType::FillOrKill && !CanMatch(*order)) {
       return {};
     }
 
@@ -142,7 +185,7 @@ class OrderBook {
       return;
     }
 
-    const auto& [order, iterator] = m_orders[orderId];
+    const auto [order, iterator] = m_orders[orderId];
     m_orders.erase(orderId);
 
     auto price = order->getPrice();
@@ -180,11 +223,11 @@ class OrderBook {
 
     auto CreateLevelInfos = [](Price price, const OrderPointers& orders) {
       return LevelInfo{
-          price, std::accumulate(
-                     orders.begin(), orders.end(), Quantity{1},
-                     [](Quantity runningSum, const OrderPointer& order) {
-                       return runningSum + order->getRemainingQuantity();
-                     })};
+          price,
+          std::accumulate(orders.begin(), orders.end(), Quantity{0},
+                          [](Quantity runningSum, const OrderPointer& order) {
+                            return runningSum + order->getRemainingQuantity();
+                          })};
     };
 
     for (const auto& [price, orders] : m_bids) {

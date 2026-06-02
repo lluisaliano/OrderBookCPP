@@ -12,7 +12,7 @@ using OrderId = std::uint64_t;
 using Quantity = std::uint32_t;
 
 enum class Side { Buy, Sell };
-enum class OrderType { GoodTillCancel, FillOrKill };
+enum class OrderType { GoodTillCancel, FillOrKill, InmediateOrCancel, Market };
 
 struct OrderConfig {
   OrderId id;
