@@ -33,7 +33,6 @@ class OrderBook {
   std::map<Price, OrderBookLevel, std::less<Price>> m_asks;
   std::unordered_map<OrderId, OrderEntry> m_orders;
 
-  // TODO This should review if order size is enough!!
   bool CanMatch(const Order& order) const {
     const auto& side{order.getSide()};
     const auto& orderPrice{order.getPrice()};
@@ -45,11 +44,15 @@ class OrderBook {
       for (auto& askLevel : m_asks) {
         // If our buy order is higher than an ask, we can match, reducing order
         // quantity
-        if (askLevel.first < orderPrice) {
-          missingQuantity -=
-              askLevel.second.getQuantity();  // Get level quantity
-          // If missing quantity goes below 0, we can match
-          if (missingQuantity <= 0) return true;
+        if (askLevel.first <= orderPrice) {
+
+          auto levelQuantity = askLevel.second.getQuantity();
+
+          if (levelQuantity >= missingQuantity) { // If level quantity is bigger than missing quantity, we can match.
+              return true;
+          }
+
+          missingQuantity -= levelQuantity;
 
           continue;  // Otherwise check for next level price
         }
@@ -65,10 +68,15 @@ class OrderBook {
 
       for (auto& bidLevel : m_bids) {
         // If our bid level is higher than our sell order price, we can match
-        if (bidLevel.first > orderPrice) {
-          missingQuantity -= bidLevel.second.getQuantity();
+        if (bidLevel.first >= orderPrice) {
 
-          if (missingQuantity <= 0) return true;
+          auto levelQuantity = bidLevel.second.getQuantity();
+
+          if (levelQuantity >= missingQuantity) {
+              return true;
+          }
+
+          missingQuantity -= levelQuantity;
 
           continue;
         }
